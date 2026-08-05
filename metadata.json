@@ -1,0 +1,6 @@
+{
+  "name": "WallpaperX 8K Pro",
+  "description": "Ultra HD 8K & 4K wallpapers app with AI recommendations, auto wallpaper changer, parallax preview, and custom collections.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

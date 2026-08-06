@@ -1,0 +1,51 @@
+name: Build APK with Firebase
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+      
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+      
+      # 🔥 إنشاء google-services.json من Secret
+      - name: Create google-services.json
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          echo "$GOOGLE_SERVICES_JSON" > app/google-services.json
+      
+      # 📄 إنشاء .env
+      - name: Create .env file
+        run: |
+          echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY || 'demo' }}" > .env
+      
+      # 🔐 إنشاء debug keystore
+      - name: Create debug keystore
+        run: |
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+      
+      # 🏗️ بناء APK
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --stacktrace
+      
+      # ⬆️ رفع APK
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: WallpaperX-8K-Pro-Firebase
+          path: app/build/outputs/apk/debug/app-debug.apk

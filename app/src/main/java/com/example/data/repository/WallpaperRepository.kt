@@ -6,6 +6,7 @@ import com.example.data.model.ColorFilter
 import com.example.data.model.Wallpaper
 import com.example.data.model.WallpaperCategory
 import com.example.data.model.WallpaperCollection
+import com.example.data.remote.FirebaseWallpaperSyncService
 import com.example.data.remote.GeminiSearchService
 import com.example.data.remote.PinterestWallpaperService
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -17,7 +18,8 @@ import kotlinx.coroutines.flow.map
 class WallpaperRepository(
     private val wallpaperDao: WallpaperDao,
     private val pinterestService: PinterestWallpaperService = PinterestWallpaperService(),
-    private val geminiSearchService: GeminiSearchService = GeminiSearchService()
+    private val geminiSearchService: GeminiSearchService = GeminiSearchService(),
+    private val firebaseSyncService: FirebaseWallpaperSyncService = FirebaseWallpaperSyncService(wallpaperDao)
 ) {
 
     val allWallpapers: Flow<List<Wallpaper>> = wallpaperDao.getAllWallpapers().map { list ->
@@ -83,12 +85,19 @@ class WallpaperRepository(
 
     suspend fun insertCustomWallpaper(wallpaper: Wallpaper) {
         wallpaperDao.insert(WallpaperEntity.fromDomain(wallpaper))
+        firebaseSyncService.syncNewWallpaperToCloud(wallpaper)
     }
 
     suspend fun seedInitialDataIfEmpty() {
+        // First try pulling remote wallpapers from Firebase Cloud
+        firebaseSyncService.fetchFromFirebaseAndSaveLocal()
+
         val initialCatalog = getInitialCatalog()
         wallpaperDao.insertAll(initialCatalog.map { WallpaperEntity.fromDomain(it) })
         
+        // Sync catalog to Firebase Firestore
+        firebaseSyncService.syncCatalogToFirebase(initialCatalog)
+
         // Fetch diverse initial Pinterest themes on app startup
         val initialQueries = listOf("anime 8k wallpaper", "cyberpunk neon city", "supercars amoled", "nature landscape 8k", "space galaxy 8k")
         for (q in initialQueries) {

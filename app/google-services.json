@@ -1,0 +1,27 @@
+{
+  "project_info": {
+    "project_number": "000000000000",
+    "project_id": "wallpaperx-8k-pro",
+    "storage_bucket": "wallpaperx-8k-pro.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+        "android_client_info": {
+          "package_name": "com.aistudio.wallpaperx.hxkqz"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        { "current_key": "AIzaSyA0000000000000000000000000000000000" }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

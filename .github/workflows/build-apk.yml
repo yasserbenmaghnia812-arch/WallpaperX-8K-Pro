@@ -22,28 +22,23 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
       
-      # 🔥 إنشاء google-services.json من Secret
       - name: Create google-services.json
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
           echo "$GOOGLE_SERVICES_JSON" > app/google-services.json
       
-      # 📄 إنشاء .env
       - name: Create .env file
         run: |
           echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY || 'demo' }}" > .env
       
-      # 🔐 إنشاء debug keystore
       - name: Create debug keystore
         run: |
           keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
       
-      # 🏗️ بناء APK
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace
       
-      # ⬆️ رفع APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:

@@ -9,6 +9,7 @@ import com.example.data.model.WallpaperCollection
 import com.example.data.remote.FirebaseWallpaperSyncService
 import com.example.data.remote.GeminiSearchService
 import com.example.data.remote.PinterestWallpaperService
+import com.example.data.search.UnifiedSearchEngine
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flatMapLatest
@@ -19,7 +20,8 @@ class WallpaperRepository(
     private val wallpaperDao: WallpaperDao,
     private val pinterestService: PinterestWallpaperService = PinterestWallpaperService(),
     private val geminiSearchService: GeminiSearchService = GeminiSearchService(),
-    private val firebaseSyncService: FirebaseWallpaperSyncService = FirebaseWallpaperSyncService(wallpaperDao)
+    private val firebaseSyncService: FirebaseWallpaperSyncService = FirebaseWallpaperSyncService(wallpaperDao),
+    private val unifiedSearchEngine: UnifiedSearchEngine = UnifiedSearchEngine(wallpaperDao, pinterestService, geminiSearchService)
 ) {
 
     val allWallpapers: Flow<List<Wallpaper>> = wallpaperDao.getAllWallpapers().map { list ->
@@ -108,43 +110,43 @@ class WallpaperRepository(
     suspend fun fetchPinterestWallpapers(query: String) {
         val q = query.trim()
         if (q.isBlank()) return
-        val normalized = normalizeSearchQuery(q)
         try {
             val pinterestItems = pinterestService.searchPinterestWallpapers(q)
             if (pinterestItems.isNotEmpty()) {
                 wallpaperDao.insertAll(pinterestItems.map { WallpaperEntity.fromDomain(it) })
-            }
-            if (normalized != q && normalized.isNotBlank()) {
-                val normalizedItems = pinterestService.searchPinterestWallpapers(normalized)
-                if (normalizedItems.isNotEmpty()) {
-                    wallpaperDao.insertAll(normalizedItems.map { WallpaperEntity.fromDomain(it) })
-                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
 
+    /**
+     * Runs the unified (merged) search: Pinterest live images + Gemini AI query
+     * expansion, de-duplicated and persisted into the local database.
+     */
     suspend fun fetchPinterestWallpapersWithAI(query: String) {
         val q = query.trim()
         if (q.isBlank()) return
-        // First fetch regular Pinterest wallpapers
-        fetchPinterestWallpapers(q)
-        
-        // Expand query with Gemini AI
-        try {
-            val aiExpandedTerms = geminiSearchService.expandQueryWithAI(q)
-            for (term in aiExpandedTerms) {
-                if (term.isNotBlank() && term != q) {
-                    val pinterestItems = pinterestService.searchPinterestWallpapers(term)
-                    if (pinterestItems.isNotEmpty()) {
-                        wallpaperDao.insertAll(pinterestItems.map { WallpaperEntity.fromDomain(it) })
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        unifiedSearchEngine.searchAndPersist(q)
+    }
+
+    /**
+     * Unified search across local database + remote providers (Pinterest + AI).
+     * Returns de-duplicated results and caches them locally for offline use.
+     */
+    suspend fun unifiedSearch(query: String): List<Wallpaper> {
+        val q = query.trim()
+        if (q.isBlank()) return emptyList()
+        val local = unifiedSearchEngine.searchLocal(q)
+        val remote = unifiedSearchEngine.searchAndPersist(q)
+        return mergeWallpapers(local, remote)
+    }
+
+    private fun mergeWallpapers(local: List<Wallpaper>, remote: List<Wallpaper>): List<Wallpaper> {
+        val merged = linkedMapOf<String, Wallpaper>()
+        local.forEach { merged[it.id] = it }
+        remote.forEach { merged[it.id] = it }
+        return merged.values.toList()
     }
 
     fun getCategories(): List<WallpaperCategory> {

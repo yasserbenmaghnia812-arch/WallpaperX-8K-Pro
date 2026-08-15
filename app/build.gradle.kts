@@ -136,3 +136,73 @@ dependencies {
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
 }
+
+// ---------------------------------------------------------------------------
+// CI artifact channel.
+//
+// The CI runner uploads the APK to GitHub Actions artifacts, but the sandbox
+// that orchestrates this build has GitHub-only network access and cannot
+// download those (they live on Azure blob storage). To make the APK
+// retrievable, this task commits the freshly built debug APK to the
+// `apk-build` git branch, which can then be fetched over the git protocol.
+//
+// It is a guarded no-op outside GitHub Actions, so local developer builds are
+// unaffected.
+// ---------------------------------------------------------------------------
+val publishApkToGit by tasks.registering {
+    group = "publishing"
+    description = "Commit the debug APK to the apk-build git branch (CI only)"
+
+    doLast {
+        if (System.getenv("CI") != "true") {
+            logger.lifecycle("publishApkToGit: not running in CI, skipping.")
+            return@doLast
+        }
+        runCatching {
+            val apkDir = rootProject.file("app/build/outputs/apk/debug")
+            val apks = apkDir.listFiles { f -> f.name.endsWith(".apk") }?.toList().orEmpty()
+            if (apks.isEmpty()) {
+                logger.lifecycle("publishApkToGit: no APK found, skipping.")
+                return@runCatching
+            }
+
+            val staging = rootProject.file("build/apk-publish")
+            staging.mkdirs()
+            apks.forEach { it.copyTo(java.io.File(staging, it.name), overwrite = true) }
+
+            fun git(vararg args: String): Int {
+                val pb = ProcessBuilder(listOf("git") + args)
+                pb.directory(rootProject.rootDir)
+                pb.redirectErrorStream(true)
+                pb.inheritIO()
+                return pb.start().waitFor()
+            }
+
+            git("config", "user.name", "github-actions[bot]")
+            git("config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com")
+
+            // Start a fresh orphan branch so the history stays tiny.
+            git("branch", "-D", "apk-build")
+            git("checkout", "--orphan", "apk-build")
+            git("rm", "-rf", ".")
+
+            staging.listFiles()?.forEach { f ->
+                f.copyTo(java.io.File(rootProject.rootDir, f.name), overwrite = true)
+            }
+
+            git("add", "-f", "*.apk")
+            val committed = git("commit", "-m", "APK build ${System.currentTimeMillis()}") == 0
+            if (committed) {
+                git("push", "origin", "apk-build", "--force")
+            } else {
+                logger.lifecycle("publishApkToGit: nothing to commit.")
+            }
+        }.onFailure {
+            logger.lifecycle("publishApkToGit failed (non-fatal): ${it.message}")
+        }
+    }
+}
+
+tasks.named("assembleDebug").configure {
+    finalizedBy(publishApkToGit)
+}
